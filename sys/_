@@ -1,0 +1,113 @@
+#include <kernel.h>
+#include <stdio.h>
+#include <q.h>
+#include <proc.h>
+#include <lock.h>
+
+LOCAL void Priority_inherit(int lock);
+LOCAL void Max_lprio(int lock);
+int lock(int ldes1, int type, int priority) {
+	STATWORD ps;
+        struct  lentry  *lptr;
+        struct  pentry  *pptr;
+	struct pentry *temp_ptr;
+        disable(ps);
+	lptr = &locks[ldes1];
+	pptr = &proctab[currpid];
+        if (isbadlock(ldes1) || (lptr->lstate==LFREE)) {
+                restore(ps);
+                return(SYSERR);
+        }
+	if(pptr->lockheld[ldes1] == DELETED){
+		restore(ps);
+		return(SYSERR);
+	}
+	int ptr,flag = 0;
+        if (lptr->ltype == NONE) {
+		kprintf("\nGoing into if");
+		flag = 0;
+	}
+	else if(lptr->ltype == WRITE){
+		flag = 1;
+	}
+	else if(lptr->ltype==READ && type == READ){
+		ptr = q[lptr->lqtail].qprev;
+		temp_ptr = &proctab[ptr];
+		while(priority < q[ptr].qkey){
+			if(temp_ptr->plocktype == WRITE){
+				flag = 1;
+			}	
+			ptr = q[ptr].qprev;
+			temp_ptr = &proctab[ptr];
+		}
+	}
+	else if(lptr->ltype==READ && type == WRITE){
+		flag = 1;
+	}
+	else if(lptr->ltype==DELETED){
+		restore(ps);
+		return(SYSERR);
+	}
+	if(flag){
+                pptr->pstate = PRWAIT;
+		pptr->lockid = lock;
+                insert(currpid,lptr->lqhead,priority);
+		pptr->plocktype = type;
+		pptr->plockwait = ctr1000;
+                pptr->plockret = OK;
+		lptr->pidheld[currpid] = type;
+        	pptr->lockheld[ldes1] = type;
+		Priority_inherit(lock);
+                Max_lprio(lock);
+                resched();
+                restore(ps);
+                return(OK);
+	}
+	else{
+		if(type == READ){
+	   		lptr->ltype = READ;
+	   		lptr->lreaders = lptr->lreaders + 1;
+	}
+		else{
+	   		lptr->ltype = WRITE;
+		}	
+		kprintf("\nType updated as:%d",type);
+		lptr->pidheld[currpid] = type;
+        	pptr->lockheld[ldes1] = type;
+        	restore(ps);
+        	return(OK);	
+	}
+}
+LOCAL void Priority_inherit(int lock){
+	struct  lentry  *lptr = &locks[lock];
+        struct  pentry  *pptr;
+	int i,prio1,prio2;
+	for(i=0;i<NPROC;i++){
+		kprintf("\tType:%d",lptr->pidheld[i]);
+		if((lptr->pidheld[i] == READ || lptr->pidheld[i] == WRITE) && proctab[i].lockid != lock){
+				kprintf("\nBreaking for process :%s",proctab[i].pname);
+				break;
+		}
+	}
+	pptr = &proctab[i];
+	kprintf("\nProcess is %s",pptr->pname);
+	if(pptr->pinh != 0) prio1=pptr->pinh;
+	else prio1=pptr->pprio;
+	if (proctab[currpid].pinh != 0) prio2=proctab[currpid].pinh;
+	else prio2=proctab[currpid].pprio;
+
+	if(prio1 < prio2){
+		pptr->pinh = prio2;	
+	}
+}
+	
+LOCAL void Max_lprio(int lock){
+	struct  lentry  *lptr = &locks[lock];
+	int prio;
+	if(proctab[currpid].pinh !=0) prio=proctab[currpid].pinh;
+	else prio=proctab[currpid].pprio;
+	if(proctab[currpid].pinh > lptr->lprio){
+		kprintf("\nUpdated lprio");
+		lptr->lprio = proctab[currpid].pprio;
+	}
+}

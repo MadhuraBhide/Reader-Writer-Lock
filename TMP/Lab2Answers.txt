@@ -1,0 +1,75 @@
+1. The priority inversion problem could cause that a higher-priority process needs to wait for the completion of a lower-priority process.
+	1. Priority inheritance is one approach to address this issue. Please give another approach and briefly describe its idea.
+	
+	   Random boosting:
+	   Random boosting is one approach to solve priority inversion problem.
+	   This approach randomly boosts priority of threads in ready queue, which enables lower priority threads to come out of their
+	   critical section as soon as possible, and hence, higher priority thread waiting to acquire the semaphore can now execute its critical section.
+	   
+	   For example, threads A and C want to modify some shared variable, and hence, want to acquire semaphore to enter their critical sections.
+	   Priority of Thread A = 30
+	   Priority of Thread B = 20
+	   Priority of Thread C = 10
+	   Suppose thread C starts first and acquires semaphore. While thread C is in its critical section, thread B will get all the CPU time while 
+	   higher priority thread A is waiting.
+	   Random boosting solves this problem by randomly boosting priority of thread A.
+	   The low priority threads run long enough to exit the critical section, and the high-priority thread can enter the critical section.
+	   
+	   Reference: https://msdn.microsoft.com/en-us/library/windows/desktop/ms684831(v=vs.85).aspx
+		
+	2. Design a test case to show that your approach can address the priority inversion problem. 
+	   You should compare the results that derived from the original XINU implementation (use semaphore) and that derived from your 
+	   implementation (use readers/writer locks). Put your results in Lab2Answers.txt and your test case program (name it task1.c) 
+	   in both ./sys and ./TMP
+	   
+	   Reader A: Priority 25, Reader B: Priority 30, Writer: Priority 20 are trying acquire a lock.
+	   
+	   Xinu Semaphore blindly schedules Reader A before Reader B. Also, it does not differentiate between readers and writers and hence, does
+	   not allow readers to share lock.
+	   
+	   Test 4: Xinu Semaphore implementation
+			writer: to acquire lock
+			writer: acquired lock
+			reader A: to acquire lock
+			reader B: to acquire lock
+			writer: to release lock
+			reader A: acquired lock
+			reader A: to release lock
+			reader B: acquired lock
+			reader B: to release lock
+		Test 4 OK
+		
+		Readers/writers lock takes into account priority of processes waiting in queue (using priority inheritence protocol)
+		and schedules higher priority reader, which is reader B. 
+		
+		Test 3: test the basic priority inheritence
+			writer: to acquire lock
+			writer: acquired lock, sleep 10s
+			reader A: to acquire lock
+			reader B: to acquire lock
+			writer: to release lock
+			reader B: acquired lock
+			reader A: acquired lock
+			reader B: to release lock
+			reader A: to release lock
+		Test 3 OK
+	Reference : Reused test 3 in provided test_main.c
+
+
+2. Synchronization is a quite complex issue in operating systems. To show your understanding about process synchronization, 
+   you are asked to point out a reader/writer synchronization issue in this pesudo-code: task2_sync_issue.c. Multiple reader threads 
+   can execute this code concurrently by calling do_update. All the variables starting with global_ are global variables. 
+   You are asked to describe the potential issue caused by the incorrect synchronization and point out at least one possible thread 
+   interleaving that would trigger the problem. Put your answer in Lab2Answers.txt mentioned above.
+   
+   In given task2_sync_issue.c, LOCK_READER(&lock) will try to acquire 'lock'. As, Multiple reader threads 
+   can execute this code concurrently and lock allows multiple readers to enter their critical section (as per our implementation), 
+   all readers threads will execute try_update() function.
+   try_update function acquires a global semaphore (initialized to 10) and tries to write a string(which contains current time) into a buffer.
+   This means, 10 reader threads can write into this buffer at the same time (as semaphore is initialized to 10).
+   
+   buffer_add() function writes this string into buffer if buffer is free and updates size of buffer.
+   Now, if 10 reader threads acquire global semaphore and modify this buffer at the same time, there is a possibilty that one thread overwrites 
+   the contents of string written by another thread, and hence, data of that thread might be lost.
+   In the worst case, data of 9 threads may be overwritten by 10th thread. 
+   Hence, there should be mutex instead of semaphore which will provide mutually exclusive access to reader to modify buffer.
